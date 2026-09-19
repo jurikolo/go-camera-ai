@@ -27,6 +27,9 @@ go.work.sum
 # env file
 .env
 
+# project binary
+camera
+
 # Editor/IDE
 # .idea/
 # .vscode/
