@@ -23,23 +23,34 @@ Cross-compiling:
 
 ## Usage
 
-    ./camera -subnet 192.168.8.0/24 -output-dir /path/to/images
+Every option is passed as `-name=value`; this is the canonical form and
+keeps values such as negative chat IDs or `ip=filename` mappings intact.
+The older space-separated form (`-name value`) is still accepted and is
+automatically converted before parsing, so existing command lines keep
+working.
+
+    ./camera -subnet=192.168.8.0/24 -output-dir=/path/to/images
 
 Every discovered camera gets an image named after its IP address. To use
 custom file names, map cameras with `-name` (repeatable):
 
-    ./camera -subnet 192.168.8.0/24 -output-dir /path/to/images \
-        -tg-bot-token 123456:ABC-DEF -common-chat-list 111111 \
-        -name 192.168.8.58=area.jpg \
-        -name 192.168.8.204=entrance.jpg
+    ./camera -subnet=192.168.8.0/24 -output-dir=/path/to/images \
+        -tg-bot-token=123456:ABC-DEF -common-chat-list=111111 \
+        -name=192.168.8.58=area.jpg \
+        -name=192.168.8.204=entrance.jpg
 
 To also get an alert in a second chat whenever GLM's vision model
 detects a person on a captured image, pass an alert chat list plus a
 GLM API key:
 
-    ./camera -subnet 192.168.8.0/24 -output-dir /path/to/images \
-        -tg-bot-token 123456:ABC-DEF -common-chat-list 111111 \
-        -alert-chat-list 222222 -glm-api-key <your-key>.<secret>
+    ./camera -subnet=192.168.8.0/24 -output-dir=/path/to/images \
+        -tg-bot-token=123456:ABC-DEF -common-chat-list=111111 \
+        -alert-chat-list=-5221378345 -glm-api-key=<your-key>.<secret>
+
+Because every flag uses `-name=value`, values that begin with `-`
+(negative Telegram group IDs) and values that themselves contain `=`
+(`-name=192.168.8.58=area.jpg`) are always parsed correctly — the flag
+package splits only on the first `=`.
 
 | Flag               | Default    | Meaning                                   |
 |--------------------|------------|-------------------------------------------|
@@ -48,7 +59,7 @@ GLM API key:
 | `-name`            | none       | `ip=filename` mapping (repeatable)        |
 | `-tg-bot-token` | (required) | Telegram bot token used to send images   |
 | `-common-chat-list` | (required) | Telegram chat IDs (repeatable; also accepts comma/space separated list) |
-| `-alert-chat-list` | none | Comma/space separated Telegram chat IDs that receive images where a person was detected |
+| `-alert-chat-list` | none | Comma/space separated Telegram chat IDs that receive images where a person was detected (repeatable); group IDs are negative, e.g. `-alert-chat-list=-5221378345` |
 | `-glm-api-key` | none | GLM API key (required when `-alert-chat-list` is given) |
 | `-glm-model` | `glm-4v-flash` | GLM vision model used for people detection |
 | `-port`            | `554`      | RTSP port probed on every host            |
