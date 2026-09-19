@@ -16,8 +16,6 @@ import (
 	"time"
 )
 
-const defaultOutputDir = "/home/jurikolo/camera"
-
 // Config holds everything derived from the command line flags.
 type Config struct {
 	Subnet         string
@@ -47,13 +45,13 @@ func main() {
 	var names nameFlags
 	cfg := Config{}
 	flag.StringVar(&cfg.Subnet, "subnet", "", "IPv4 subnet to scan for cameras, e.g. 192.168.8.0/24 (required)")
-	flag.StringVar(&cfg.OutputDir, "output-dir", defaultOutputDir, "directory that receives the captured images")
+	flag.StringVar(&cfg.OutputDir, "output-dir", "", "directory that receives the captured images (required)")
 	flag.Int64Var(&cfg.MinSize, "min-size", 5000, "minimum image size in bytes for a capture to count as good")
 	flag.IntVar(&cfg.RTSPPort, "port", 554, "RTSP port probed on every host")
 	flag.DurationVar(&cfg.ProbeTimeout, "probe-timeout", time.Second, "TCP connect timeout per host while scanning")
 	flag.DurationVar(&cfg.CaptureTimeout, "capture-timeout", 10*time.Second, "timeout for a single ffmpeg invocation")
 	flag.IntVar(&cfg.ScanWorkers, "scan-workers", 64, "number of hosts probed concurrently")
-	flag.Var(&names, "name", "output file for one camera as ip=filename, e.g. -name 192.168.8.58=parking_kolya.jpg (repeatable)")
+	flag.Var(&names, "name", "output file for one camera as ip=filename, e.g. -name 192.168.8.58=parking.jpg (repeatable)")
 	flag.Parse()
 
 	cfg.NameMap = make(map[string]string, len(names))
@@ -71,6 +69,11 @@ func main() {
 func run(cfg Config) int {
 	if cfg.Subnet == "" {
 		fmt.Fprintln(os.Stderr, "camera: the -subnet flag is required, e.g. camera -subnet 192.168.8.0/24")
+		flag.PrintDefaults()
+		return 2
+	}
+	if cfg.OutputDir == "" {
+		fmt.Fprintln(os.Stderr, "camera: the -output-dir flag is required, e.g. camera -output-dir /var/camera")
 		flag.PrintDefaults()
 		return 2
 	}

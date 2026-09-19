@@ -47,12 +47,12 @@ func TestBuildStreamURL(t *testing.T) {
 }
 
 func TestParseNameMapping(t *testing.T) {
-	ip, name, err := parseNameMapping("192.168.8.58=parking_kolya.jpg")
+	ip, name, err := parseNameMapping("192.168.8.58=parking.jpg")
 	if err != nil {
 		t.Fatalf("parseNameMapping: %v", err)
 	}
-	if ip != "192.168.8.58" || name != "parking_kolya.jpg" {
-		t.Errorf("parseNameMapping = %q, %q; want 192.168.8.58, parking_kolya.jpg", ip, name)
+	if ip != "192.168.8.58" || name != "parking.jpg" {
+		t.Errorf("parseNameMapping = %q, %q; want 192.168.8.58, parking.jpg", ip, name)
 	}
 
 	if _, name, err := parseNameMapping("192.168.8.58=../../tmp/entrance.jpg"); err != nil || name != "entrance.jpg" {
