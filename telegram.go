@@ -112,6 +112,10 @@ func sendImageToChats(token string, chats []string, imagePath string) error {
 
 // sendPhoto performs a single multipart sendPhoto request for one chat.
 func sendPhoto(token, chatID, filename string, image []byte) error {
+	// The Telegram API URL is "…/bot<token>/sendPhoto". Users often paste the
+	// token including its literal "bot" prefix; strip it so the URL does not
+	// become "…/botbot<token>/sendPhoto", which Telegram answers with 404.
+	token = strings.TrimPrefix(token, "bot")
 	var body bytes.Buffer
 	w := multipart.NewWriter(&body)
 

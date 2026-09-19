@@ -202,3 +202,27 @@ func drain(rec <-chan sendRecord) {
 		}
 	}
 }
+
+// TestSendPhotoToleratesBotPrefixInToken reproduces the HTTP 404 users hit
+// when the token is passed with its literal "bot" prefix (bot123456:ABC-DEF):
+// the API path would become "/botbot123456:ABC-DEF/sendPhoto". The prefix must
+// be stripped exactly once so both token spellings hit the same route.
+func TestSendPhotoToleratesBotPrefixInToken(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	}))
+	defer srv.Close()
+	telegramAPI = srv.URL
+
+	for _, token := range []string{"123456:ABC-DEF", "bot123456:ABC-DEF"} {
+		gotPath = ""
+		if err := sendPhoto(token, "111", "img.jpg", []byte("frame")); err != nil {
+			t.Fatalf("sendPhoto(token=%q): %v", token, err)
+		}
+		if want := "/bot123456:ABC-DEF/sendPhoto"; gotPath != want {
+			t.Fatalf("sendPhoto(token=%q) request path = %q, want %q", token, gotPath, want)
+		}
+	}
+}

@@ -57,7 +57,7 @@ package splits only on the first `=`.
 | `-subnet`          | (required) | IPv4 CIDR to scan, e.g. `192.168.8.0/24`  |
 | `-output-dir`      | (required) | Directory where images are written        |
 | `-name`            | none       | `ip=filename` mapping (repeatable)        |
-| `-tg-bot-token` | (required) | Telegram bot token used to send images   |
+| `-tg-bot-token` | (required) | Telegram bot token used to send images; the literal `bot` prefix is optional (`123456:ABC-DEF` or `bot123456:ABC-DEF`)   |
 | `-common-chat-list` | (required) | Telegram chat IDs (repeatable; also accepts comma/space separated list) |
 | `-alert-chat-list` | none | Comma/space separated Telegram chat IDs that receive images where a person was detected (repeatable); group IDs are negative, e.g. `-alert-chat-list=-5221378345` |
 | `-glm-api-key` | none | GLM API key (required when `-alert-chat-list` is given) |
