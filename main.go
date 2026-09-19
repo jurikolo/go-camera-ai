@@ -27,6 +27,19 @@ type Config struct {
 	ScanWorkers    int
 	NameMap        map[string]string
 	FFmpegPath     string
+	ChatToken      string   // Telegram bot token
+	ChatList       string   // comma/space separated chat IDs
+	ChatFlags      []string // repeated -common-chat-list values
+}
+
+// chatFlags collects repeated -common-chat-list options.
+type chatFlags []string
+
+func (c *chatFlags) String() string { return strings.Join(*c, ", ") }
+
+func (c *chatFlags) Set(v string) error {
+	*c = append(*c, v)
+	return nil
 }
 
 // nameFlags collects repeated -name ip=filename options.
@@ -43,6 +56,7 @@ func main() {
 	log.SetFlags(log.LstdFlags)
 
 	var names nameFlags
+	var chats chatFlags
 	cfg := Config{}
 	flag.StringVar(&cfg.Subnet, "subnet", "", "IPv4 subnet to scan for cameras, e.g. 192.168.8.0/24 (required)")
 	flag.StringVar(&cfg.OutputDir, "output-dir", "", "directory that receives the captured images (required)")
@@ -51,9 +65,12 @@ func main() {
 	flag.DurationVar(&cfg.ProbeTimeout, "probe-timeout", time.Second, "TCP connect timeout per host while scanning")
 	flag.DurationVar(&cfg.CaptureTimeout, "capture-timeout", 10*time.Second, "timeout for a single ffmpeg invocation")
 	flag.IntVar(&cfg.ScanWorkers, "scan-workers", 64, "number of hosts probed concurrently")
-	flag.Var(&names, "name", "output file for one camera as ip=filename, e.g. -name 192.168.8.58=parking.jpg (repeatable)")
+	flag.Var(&names, "name", "output file for one camera as ip=filename, e.g. -name 192.168.8.58=area.jpg (repeatable)")
+	flag.StringVar(&cfg.ChatToken, "common-chat-token", "", "Telegram bot token used to send captured images (required)")
+	flag.Var(&chats, "common-chat-list", "Telegram chat IDs receiving images, e.g. -common-chat-list 123456789 (repeatable)")
 	flag.Parse()
 
+	cfg.ChatFlags = chats
 	cfg.NameMap = make(map[string]string, len(names))
 	for _, spec := range names {
 		ip, name, err := parseNameMapping(spec)
@@ -74,6 +91,21 @@ func run(cfg Config) int {
 	}
 	if cfg.OutputDir == "" {
 		fmt.Fprintln(os.Stderr, "camera: the -output-dir flag is required, e.g. camera -output-dir /var/camera")
+		flag.PrintDefaults()
+		return 2
+	}
+
+	if cfg.ChatToken == "" {
+		fmt.Fprintln(os.Stderr, "camera: the -common-chat-token flag is required, e.g. camera -common-chat-token 123456:ABC-DEF...")
+		flag.PrintDefaults()
+		return 2
+	}
+	chatIDs := parseChatIDs(cfg.ChatList)
+	for _, v := range cfg.ChatFlags {
+		chatIDs = append(chatIDs, parseChatIDs(v)...)
+	}
+	if len(chatIDs) == 0 {
+		fmt.Fprintln(os.Stderr, "camera: at least one chat id must be given with -common-chat-list")
 		flag.PrintDefaults()
 		return 2
 	}
@@ -110,11 +142,14 @@ func run(cfg Config) int {
 		wg.Go(func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			if captureFromCamera(ip, cfg) {
-				mu.Lock()
-				captured++
-				mu.Unlock()
+			path, ok := captureFromCamera(ip, cfg)
+			if !ok {
+				return
 			}
+			mu.Lock()
+			captured++
+			mu.Unlock()
+			sendIfChanged(cfg, path, chatIDs)
 		})
 	}
 	wg.Wait()
@@ -125,6 +160,25 @@ func run(cfg Config) int {
 	}
 	log.Printf("captured images from %d of %d camera(s)", captured, len(cameras))
 	return 0
+}
+
+// sendIfChanged sends the image to the configured Telegram chats, but only
+// if it differs from the last version that was delivered (tracked with a
+// .sha256 sidecar file next to the image). Errors are logged, not fatal.
+func sendIfChanged(cfg Config, path string, chatIDs []string) {
+	sum, err := hashFile(path)
+	if err != nil {
+		log.Printf("%s: cannot hash image: %v", path, err)
+		return
+	}
+	if old := readHash(path); old == sum {
+		return // image unchanged since the last delivery
+	}
+	if err := sendImageToChats(cfg.ChatToken, chatIDs, path); err != nil {
+		log.Printf("%s: telegram delivery failed: %v", path, err)
+		return
+	}
+	log.Printf("%s: sent image to %d chat(s)", path, len(chatIDs))
 }
 
 // parseNameMapping splits an ip=filename option. The filename is reduced

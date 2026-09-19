@@ -29,7 +29,8 @@ Every discovered camera gets an image named after its IP address. To use
 custom file names, map cameras with `-name` (repeatable):
 
     ./camera -subnet 192.168.8.0/24 -output-dir /path/to/images \
-        -name 192.168.8.58=parking.jpg \
+        -common-chat-token 123456:ABC-DEF -common-chat-list 111111 \
+        -name 192.168.8.58=area.jpg \
         -name 192.168.8.204=entrance.jpg
 
 | Flag               | Default    | Meaning                                   |
@@ -37,6 +38,8 @@ custom file names, map cameras with `-name` (repeatable):
 | `-subnet`          | (required) | IPv4 CIDR to scan, e.g. `192.168.8.0/24`  |
 | `-output-dir`      | (required) | Directory where images are written        |
 | `-name`            | none       | `ip=filename` mapping (repeatable)        |
+| `-common-chat-token` | (required) | Telegram bot token used to send images   |
+| `-common-chat-list` | (required) | Telegram chat IDs (repeatable; also accepts comma/space separated list) |
 | `-port`            | `554`      | RTSP port probed on every host            |
 | `-min-size`        | `5000`     | Minimum valid image size in bytes         |
 | `-probe-timeout`   | `1s`       | TCP connect timeout per host              |
@@ -55,3 +58,13 @@ found nothing or every capture failed, `2` for bad options.
 - Images are written to a hidden temp file and renamed into place only
   after the size check passes, so a failed run never destroys the
   previous snapshot.
+- Each captured image is hashed (SHA-256). The digest is stored next to
+  the image in a `.sha256` sidecar file and compared on the next run; an
+  identical image is not sent again.
+- When the image changed, it is uploaded to every chat given with
+  `-common-chat-list` (repeatable flag or comma/space separated IDs)
+  using the bot identified by `-common-chat-token`.
+- The sidecar hash is only updated after at least one chat received the
+  image, so a completely failed delivery is automatically retried on the
+  next run. Individual chat failures are logged and do not affect the
+  exit code.

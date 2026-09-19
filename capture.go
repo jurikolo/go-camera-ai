@@ -18,8 +18,8 @@ const maxConcurrentCaptures = 8
 // back to stream 1 exactly like the shell script it replaces. Frames are
 // written to a temp file and renamed into place only after passing the
 // size check, so readers never observe a partial image. It reports
-// whether a usable image was produced.
-func captureFromCamera(ip string, cfg Config) bool {
+// saved image.
+func captureFromCamera(ip string, cfg Config) (string, bool) {
 	dest := filepath.Join(cfg.OutputDir, ip+".jpg")
 	if name, ok := cfg.NameMap[ip]; ok {
 		dest = filepath.Join(cfg.OutputDir, name)
@@ -39,14 +39,14 @@ func captureFromCamera(ip string, cfg Config) bool {
 		if err := os.Rename(tmp, dest); err != nil {
 			log.Printf("[%s] cannot move image into place: %v", ip, err)
 			os.Remove(tmp)
-			return false
+			return "", false
 		}
 		log.Printf("[%s] saved %s (stream=%s, %d bytes)", ip, dest, stream, size)
-		return true
+		return dest, true
 	}
 
 	log.Printf("[%s] no usable image from either stream", ip)
-	return false
+	return "", false
 }
 
 // grabStream runs ffmpeg once against one stream of the camera at ip and
@@ -65,7 +65,8 @@ func grabStream(ip, stream string, cfg Config) (path string, size int64, err err
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.CaptureTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, cfg.FFmpegPath,
+	cmd := exec.CommandContext(
+		ctx, cfg.FFmpegPath,
 		"-y",
 		"-rtsp_transport", "tcp",
 		"-i", buildStreamURL(ip, cfg.RTSPPort, stream),
