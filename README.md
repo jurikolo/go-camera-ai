@@ -29,17 +29,28 @@ Every discovered camera gets an image named after its IP address. To use
 custom file names, map cameras with `-name` (repeatable):
 
     ./camera -subnet 192.168.8.0/24 -output-dir /path/to/images \
-        -common-chat-token 123456:ABC-DEF -common-chat-list 111111 \
+        -tg-bot-token 123456:ABC-DEF -common-chat-list 111111 \
         -name 192.168.8.58=area.jpg \
         -name 192.168.8.204=entrance.jpg
+
+To also get an alert in a second chat whenever GLM's vision model
+detects a person on a captured image, pass an alert chat list plus a
+GLM API key:
+
+    ./camera -subnet 192.168.8.0/24 -output-dir /path/to/images \
+        -tg-bot-token 123456:ABC-DEF -common-chat-list 111111 \
+        -alert-chat-list 222222 -glm-api-key <your-key>.<secret>
 
 | Flag               | Default    | Meaning                                   |
 |--------------------|------------|-------------------------------------------|
 | `-subnet`          | (required) | IPv4 CIDR to scan, e.g. `192.168.8.0/24`  |
 | `-output-dir`      | (required) | Directory where images are written        |
 | `-name`            | none       | `ip=filename` mapping (repeatable)        |
-| `-common-chat-token` | (required) | Telegram bot token used to send images   |
+| `-tg-bot-token` | (required) | Telegram bot token used to send images   |
 | `-common-chat-list` | (required) | Telegram chat IDs (repeatable; also accepts comma/space separated list) |
+| `-alert-chat-list` | none | Comma/space separated Telegram chat IDs that receive images where a person was detected |
+| `-glm-api-key` | none | GLM API key (required when `-alert-chat-list` is given) |
+| `-glm-model` | `glm-4v-flash` | GLM vision model used for people detection |
 | `-port`            | `554`      | RTSP port probed on every host            |
 | `-min-size`        | `5000`     | Minimum valid image size in bytes         |
 | `-probe-timeout`   | `1s`       | TCP connect timeout per host              |
@@ -63,8 +74,11 @@ found nothing or every capture failed, `2` for bad options.
   identical image is not sent again.
 - When the image changed, it is uploaded to every chat given with
   `-common-chat-list` (repeatable flag or comma/space separated IDs)
-  using the bot identified by `-common-chat-token`.
-- The sidecar hash is only updated after at least one chat received the
-  image, so a completely failed delivery is automatically retried on the
-  next run. Individual chat failures are logged and do not affect the
-  exit code.
+  using the bot identified by `-tg-bot-token`.
+- If `-alert-chat-list` is set, the new image is also sent to GLM's
+  vision API (`-glm-model`, default `glm-4v-flash`) which answers whether
+  a person is visible. When it does, the image is additionally sent to
+  every alert chat, using the same bot token as for the regular chats.
+- People detection runs only for newly changed images that were sent
+  successfully; alert delivery errors are logged only and do not affect
+  the exit code.
