@@ -61,7 +61,7 @@ package splits only on the first `=`.
 | `-common-chat-list` | (required) | Telegram chat IDs (repeatable; also accepts comma/space separated list) |
 | `-alert-chat-list` | none | Comma/space separated Telegram chat IDs that receive images where a person was detected (repeatable); group IDs are negative, e.g. `-alert-chat-list=-5221378345` |
 | `-glm-api-key` | none | GLM API key (required when `-alert-chat-list` is given) |
-| `-glm-model` | `glm-4v-flash` | GLM vision model used for people detection |
+| `-glm-model` | `glm-4.6v-flash` | GLM vision model used for people detection |
 | `-port`            | `554`      | RTSP port probed on every host            |
 | `-min-size`        | `5000`     | Minimum valid image size in bytes         |
 | `-probe-timeout`   | `1s`       | TCP connect timeout per host              |
@@ -89,7 +89,10 @@ found nothing or every capture failed, `2` for bad options.
 - If `-alert-chat-list` is set, the new image is also sent to GLM's
   vision API (`-glm-model`, default `glm-4v-flash`) which answers whether
   a person is visible. When it does, the image is additionally sent to
-  every alert chat, using the same bot token as for the regular chats.
-- People detection runs only for newly changed images that were sent
+  every alert chat, using the same bot token as for the regular chats.- GLM vision requests are serialized (one at a time across all cameras)
+  because rate limits apply per account. A request rejected with the
+  account rate limit (error 1302 or HTTP 429) is retried with short
+  waits; if it stays rate limited, detection is skipped for that image
+  and retried on the next run when the image changes.- People detection runs only for newly changed images that were sent
   successfully; alert delivery errors are logged only and do not affect
   the exit code.

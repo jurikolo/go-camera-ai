@@ -3,12 +3,15 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 type glmRecord struct {
@@ -206,6 +209,110 @@ func TestDetectPeopleMissingImage(t *testing.T) {
 	if _, err := detectPeople("test-key", defaultGLMModel, filepath.Join(t.TempDir(), "gone.jpg")); err == nil {
 		t.Fatal("detectPeople succeeded, want error for missing image")
 	}
+}
+
+// withNoRetryWait shrinks the rate-limit backoff to zero for the duration of
+// a test so retries stay instant.
+func withNoRetryWait(t *testing.T) {
+	t.Helper()
+	orig := glmRetrySleep
+	glmRetrySleep = func(time.Duration) {}
+	t.Cleanup(func() { glmRetrySleep = orig })
+}
+
+func TestDetectPeopleRetriesRateLimit(t *testing.T) {
+	withNoRetryWait(t)
+	path := writeTestImage(t, "frame")
+
+	var mu sync.Mutex
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calls++
+		n := calls
+		mu.Unlock()
+		if n == 1 {
+			w.Write([]byte(`{"error":{"code":"1302","message":"您的账户已达到速率限制，请您控制请求频率"}}`))
+			return
+		}
+		w.Write([]byte(`{"choices":[{"index":0,"message":{"role":"assistant","content":"no"},"finish_reason":"stop"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	orig := glmAPI
+	glmAPI = srv.URL
+	t.Cleanup(func() { glmAPI = orig })
+
+	people, err := detectPeople("test-key", defaultGLMModel, path)
+	if err != nil {
+		t.Fatalf("detectPeople after retry: %v", err)
+	}
+	if people {
+		t.Fatal("detectPeople = true, want false")
+	}
+	if n := serveCalls(&mu, &calls); n != 2 {
+		t.Fatalf("served %d calls, want 2 (one rate limited, one success)", n)
+	}
+}
+
+func TestDetectPeopleGivesUpAfterRetries(t *testing.T) {
+	withNoRetryWait(t)
+	path := writeTestImage(t, "frame")
+
+	var mu sync.Mutex
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calls++
+		mu.Unlock()
+		w.Write([]byte(`{"error":{"code":"1302","message":"rate limited"}}`))
+	}))
+	t.Cleanup(srv.Close)
+	orig := glmAPI
+	glmAPI = srv.URL
+	t.Cleanup(func() { glmAPI = orig })
+
+	_, err := detectPeople("test-key", defaultGLMModel, path)
+	if err == nil {
+		t.Fatal("detectPeople succeeded, want rate-limit error after retries exhausted")
+	}
+	var e *glmError
+	if !errors.As(err, &e) || e.Code != "1302" {
+		t.Fatalf("err = %v, want glm error code 1302", err)
+	}
+	if n := serveCalls(&mu, &calls); n != len(glmRetryWaits)+1 {
+		t.Fatalf("served %d calls, want %d (initial + %d retries)", n, len(glmRetryWaits)+1, len(glmRetryWaits))
+	}
+}
+
+func TestDetectPeopleDoesNotRetryOtherErrors(t *testing.T) {
+	withNoRetryWait(t)
+	path := writeTestImage(t, "frame")
+
+	var mu sync.Mutex
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calls++
+		mu.Unlock()
+		w.Write([]byte(`{"error":{"code":"1002","message":"invalid api key"}}`))
+	}))
+	t.Cleanup(srv.Close)
+	orig := glmAPI
+	glmAPI = srv.URL
+	t.Cleanup(func() { glmAPI = orig })
+
+	if _, err := detectPeople("test-key", defaultGLMModel, path); err == nil {
+		t.Fatal("detectPeople succeeded, want error for invalid key")
+	}
+	if n := serveCalls(&mu, &calls); n != 1 {
+		t.Fatalf("served %d calls, want 1 (no retry for non-rate-limit errors)", n)
+	}
+}
+
+func serveCalls(mu *sync.Mutex, calls *int) int {
+	mu.Lock()
+	defer mu.Unlock()
+	return *calls
 }
 
 func drainGLM(rec <-chan glmRecord) {

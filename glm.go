@@ -7,10 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -25,6 +27,19 @@ const defaultGLMModel = "glm-4.6v-flash"
 // glmClient has its own timeout, independent of the Telegram client, so a
 // slow vision model cannot delay image delivery.
 var glmClient = &http.Client{Timeout: 60 * time.Second}
+
+// GLM rate limits are account-wide, so concurrent detections from several
+// cameras would immediately trip the free tier's request frequency cap.
+// The mutex serializes vision requests within the process.
+var glmMu sync.Mutex
+
+// Rate-limit retries: Zhipu answers error code "1302" (account rate limit)
+// or HTTP 429 when requests arrive too fast. The wait between attempts is a
+// variable so tests can shrink it to zero.
+var (
+	glmRetryWaits = []time.Duration{3 * time.Second, 8 * time.Second}
+	glmRetrySleep = time.Sleep
+)
 
 // glmPrompt asks the vision model for an unambiguous one word answer so the
 // result can be parsed without guessing.
@@ -75,9 +90,41 @@ type glmError struct {
 	Message string `json:"message"`
 }
 
+func (e *glmError) Error() string {
+	return fmt.Sprintf("glm error %s: %s", e.Code, e.Message)
+}
+
+// glmRateLimited reports whether a detection failure was caused by GLM's
+// account rate limit, which is worth retrying after a pause.
+func glmRateLimited(err error) bool {
+	var e *glmError
+	return errors.As(err, &e) && e.Code == "1302"
+}
+
 // detectPeople sends the JPEG at imagePath to the GLM vision model and
-// reports whether the model thinks it shows at least one person.
+// reports whether the model thinks it shows at least one person. A request
+// rejected with the account rate limit (error 1302 or HTTP 429) is retried
+// with a growing pause.
 func detectPeople(apiKey, model, imagePath string) (bool, error) {
+	glmMu.Lock()
+	defer glmMu.Unlock()
+
+	for attempt := 0; ; attempt++ {
+		people, err := detectPeopleOnce(apiKey, model, imagePath)
+		if err == nil {
+			return people, nil
+		}
+		if attempt >= len(glmRetryWaits) || !glmRateLimited(err) {
+			return false, err
+		}
+		wait := glmRetryWaits[attempt]
+		log.Printf("%s: glm rate limited, retrying in %s", imagePath, wait)
+		glmRetrySleep(wait)
+	}
+}
+
+// detectPeopleOnce performs a single GLM chat completion request.
+func detectPeopleOnce(apiKey, model, imagePath string) (bool, error) {
 	image, err := os.ReadFile(imagePath)
 	if err != nil {
 		return false, fmt.Errorf("read image: %w", err)
@@ -120,7 +167,10 @@ func detectPeople(apiKey, model, imagePath string) (bool, error) {
 		return false, fmt.Errorf("decode glm response (status %d): %w", resp.StatusCode, err)
 	}
 	if parsed.Error != nil {
-		return false, fmt.Errorf("glm error %s: %s", parsed.Error.Code, parsed.Error.Message)
+		return false, &glmError{Code: parsed.Error.Code, Message: parsed.Error.Message}
+	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return false, &glmError{Code: "1302", Message: "HTTP 429 (too many requests)"}
 	}
 	if resp.StatusCode != http.StatusOK {
 		return false, fmt.Errorf("glm returned status %d", resp.StatusCode)
