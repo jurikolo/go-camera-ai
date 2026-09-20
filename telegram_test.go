@@ -93,7 +93,7 @@ func fakeTelegram(t *testing.T, ok bool, failChats map[string]bool) <-chan sendR
 			http.Error(w, "missing photo", http.StatusBadRequest)
 			return
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 		body, err := io.ReadAll(file)
 		if err != nil {
 			http.Error(w, "bad photo", http.StatusBadRequest)
@@ -102,10 +102,10 @@ func fakeTelegram(t *testing.T, ok bool, failChats map[string]bool) <-chan sendR
 		rec <- sendRecord{chatID: chatID, filename: header.Filename, body: body}
 		if failChats[chatID] || !ok {
 			w.WriteHeader(http.StatusForbidden)
-			json.NewEncoder(w).Encode(map[string]any{"ok": false, "description": "forbidden"})
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "description": "forbidden"})
 			return
 		}
-		json.NewEncoder(w).Encode(map[string]any{"ok": true})
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 	}))
 	t.Cleanup(func() {
 		srv.Close()
@@ -211,7 +211,7 @@ func TestSendPhotoToleratesBotPrefixInToken(t *testing.T) {
 	var gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
-		json.NewEncoder(w).Encode(map[string]any{"ok": true})
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 	}))
 	defer srv.Close()
 	telegramAPI = srv.URL

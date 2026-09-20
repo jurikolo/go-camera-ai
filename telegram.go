@@ -30,7 +30,7 @@ func hashFile(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
@@ -57,12 +57,12 @@ func writeHash(imagePath, hash string) error {
 	}
 	tmpPath := tmp.Name()
 	if _, err := tmp.WriteString(hash); err != nil {
-		tmp.Close()
-		os.Remove(tmpPath)
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
 		return err
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return err
 	}
 	return os.Rename(tmpPath, imagePath+".sha256")
@@ -144,7 +144,7 @@ func sendPhoto(token, chatID, filename string, image []byte) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 	if resp.StatusCode != http.StatusOK {

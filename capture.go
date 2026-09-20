@@ -33,12 +33,12 @@ func captureFromCamera(ip string, cfg Config) (string, bool) {
 		}
 		if size < cfg.MinSize {
 			log.Printf("[%s] stream=%s: image too small (%d bytes)", ip, stream, size)
-			os.Remove(tmp)
+			_ = os.Remove(tmp)
 			continue
 		}
 		if err := os.Rename(tmp, dest); err != nil {
 			log.Printf("[%s] cannot move image into place: %v", ip, err)
-			os.Remove(tmp)
+			_ = os.Remove(tmp)
 			return "", false
 		}
 		log.Printf("[%s] saved %s (stream=%s, %d bytes)", ip, dest, stream, size)
@@ -74,7 +74,7 @@ func grabStream(ip, stream string, cfg Config) (path string, size int64, err err
 		tmpPath,
 	)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		if ctx.Err() != nil {
 			return "", 0, fmt.Errorf("ffmpeg timed out after %s", cfg.CaptureTimeout)
 		}
@@ -83,7 +83,7 @@ func grabStream(ip, stream string, cfg Config) (path string, size int64, err err
 
 	info, err := os.Stat(tmpPath)
 	if err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return "", 0, err
 	}
 	return tmpPath, info.Size(), nil

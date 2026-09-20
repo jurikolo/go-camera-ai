@@ -47,7 +47,7 @@ func fakeGLM(t *testing.T, answer string, errPayload map[string]any) <-chan glmR
 		rec <- g
 		if errPayload != nil {
 			w.WriteHeader(http.StatusUnauthorized)
-			json.NewEncoder(w).Encode(errPayload)
+			_ = json.NewEncoder(w).Encode(errPayload)
 			return
 		}
 		var resp glmResponse
@@ -60,7 +60,7 @@ func fakeGLM(t *testing.T, answer string, errPayload map[string]any) <-chan glmR
 			FinishReason string `json:"finish_reason"`
 		}, 1)
 		resp.Choices[0].Message.Content = answer
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	t.Cleanup(func() {
 		srv.Close()
@@ -193,7 +193,7 @@ func TestDetectPeopleUnrecognizedAnswer(t *testing.T) {
 func TestDetectPeopleNoChoices(t *testing.T) {
 	path := writeTestImage(t, "frame")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"choices":[]}`))
+		_, _ = w.Write([]byte(`{"choices":[]}`))
 	}))
 	t.Cleanup(srv.Close)
 	orig := glmAPI
@@ -232,10 +232,10 @@ func TestDetectPeopleRetriesRateLimit(t *testing.T) {
 		n := calls
 		mu.Unlock()
 		if n == 1 {
-			w.Write([]byte(`{"error":{"code":"1302","message":"您的账户已达到速率限制，请您控制请求频率"}}`))
+			_, _ = w.Write([]byte(`{"error":{"code":"1302","message":"您的账户已达到速率限制，请您控制请求频率"}}`))
 			return
 		}
-		w.Write([]byte(`{"choices":[{"index":0,"message":{"role":"assistant","content":"no"},"finish_reason":"stop"}]}`))
+		_, _ = w.Write([]byte(`{"choices":[{"index":0,"message":{"role":"assistant","content":"no"},"finish_reason":"stop"}]}`))
 	}))
 	t.Cleanup(srv.Close)
 	orig := glmAPI
@@ -264,7 +264,7 @@ func TestDetectPeopleGivesUpAfterRetries(t *testing.T) {
 		mu.Lock()
 		calls++
 		mu.Unlock()
-		w.Write([]byte(`{"error":{"code":"1302","message":"rate limited"}}`))
+		_, _ = w.Write([]byte(`{"error":{"code":"1302","message":"rate limited"}}`))
 	}))
 	t.Cleanup(srv.Close)
 	orig := glmAPI
@@ -294,7 +294,7 @@ func TestDetectPeopleDoesNotRetryOtherErrors(t *testing.T) {
 		mu.Lock()
 		calls++
 		mu.Unlock()
-		w.Write([]byte(`{"error":{"code":"1002","message":"invalid api key"}}`))
+		_, _ = w.Write([]byte(`{"error":{"code":"1002","message":"invalid api key"}}`))
 	}))
 	t.Cleanup(srv.Close)
 	orig := glmAPI
