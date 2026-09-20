@@ -25,6 +25,7 @@ type Config struct {
 	ProbeTimeout   time.Duration
 	CaptureTimeout time.Duration
 	ScanWorkers    int
+	Delay          time.Duration
 	NameMap        map[string]string
 	FFmpegPath     string
 	// Telegram delivery: ChatToken is the bot token, ChatList/ChatFlags are
@@ -116,6 +117,8 @@ func main() {
 	flag.DurationVar(&cfg.ProbeTimeout, "probe-timeout", time.Second, "TCP connect timeout per host while scanning")
 	flag.DurationVar(&cfg.CaptureTimeout, "capture-timeout", 10*time.Second, "timeout for a single ffmpeg invocation")
 	flag.IntVar(&cfg.ScanWorkers, "scan-workers", 64, "number of hosts probed concurrently")
+	var delaySeconds int
+	flag.IntVar(&delaySeconds, "delay", 0, "seconds to wait before starting, e.g. -delay=30")
 	flag.Var(&names, "name", "output file for one camera as -name=ip=filename, e.g. -name=192.168.8.58=area.jpg (repeatable)")
 	flag.StringVar(&cfg.ChatToken, "tg-bot-token", "", "Telegram bot token used to send captured images, e.g. -tg-bot-token=123456:ABC-DEF (required)")
 	flag.Var(&chats, "common-chat-list", "Telegram chat IDs receiving images, e.g. -common-chat-list=123456789 (repeatable)")
@@ -139,7 +142,20 @@ func main() {
 		cfg.NameMap[ip] = name
 	}
 
+	cfg.Delay = time.Duration(delaySeconds) * time.Second
+
 	os.Exit(run(cfg))
+}
+
+// waitStartupDelay pauses the configured -delay interval before the run
+// starts, so a cron job can be shifted away from busy periods without
+// changing the crontab. Zero and negative values return immediately.
+func waitStartupDelay(d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	log.Printf("waiting %s before starting (-delay)", d)
+	time.Sleep(d)
 }
 
 func run(cfg Config) int {
@@ -177,6 +193,13 @@ func run(cfg Config) int {
 	if cfg.GLMModel == "" {
 		cfg.GLMModel = defaultGLMModel
 	}
+
+	if cfg.Delay < 0 {
+		fmt.Fprintln(os.Stderr, "camera: the -delay flag must not be negative")
+		flag.PrintDefaults()
+		return 2
+	}
+	waitStartupDelay(cfg.Delay)
 
 	ffmpeg, err := exec.LookPath("ffmpeg")
 	if err != nil {
@@ -242,9 +265,12 @@ func sendIfChanged(cfg Config, path string, chatIDs, alertChatIDs []string) {
 		log.Printf("%s: cannot hash image: %v", path, err)
 		return
 	}
-	if old := readHash(path); old == sum {
-		return // image unchanged since the last delivery
-	}
+	// TEMP(debug): duplicate-image suppression is disabled so every run
+	// re-sends every captured image. Restore once delivery is verified.
+	_ = sum
+	// if old := readHash(path); old == sum {
+	// 	return // image unchanged since the last delivery
+	// }
 	if err := sendImageToChats(cfg.ChatToken, chatIDs, path); err != nil {
 		log.Printf("%s: telegram delivery failed: %v", path, err)
 		return

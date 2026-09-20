@@ -3,6 +3,7 @@ package main
 import (
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestNormalizeFlagsArgs(t *testing.T) {
@@ -99,5 +100,35 @@ func TestNormalizeFlagsArgsEmpty(t *testing.T) {
 	got := normalizeFlagsArgs(nil, map[string]bool{"subnet": true})
 	if len(got) != 0 {
 		t.Fatalf("expected empty output, got %q", got)
+	}
+}
+
+func TestWaitStartupDelay(t *testing.T) {
+	start := time.Now()
+	waitStartupDelay(100 * time.Millisecond)
+	if elapsed := time.Since(start); elapsed < 100*time.Millisecond {
+		t.Fatalf("waitStartupDelay returned after %s, waited less than requested", elapsed)
+	}
+
+	// Zero and negative values must return immediately.
+	for _, d := range []time.Duration{0, -time.Hour} {
+		start := time.Now()
+		waitStartupDelay(d)
+		if elapsed := time.Since(start); elapsed > 50*time.Millisecond {
+			t.Fatalf("waitStartupDelay(%s) blocked for %s, want immediate return", d, elapsed)
+		}
+	}
+}
+
+func TestRunRejectsNegativeDelay(t *testing.T) {
+	cfg := Config{
+		Subnet:    "10.0.0.0/30",
+		OutputDir: t.TempDir(),
+		ChatToken: "dummy-token",
+		ChatFlags: []string{"123456789"},
+		Delay:     -time.Second,
+	}
+	if code := run(cfg); code != 2 {
+		t.Fatalf("run with negative delay returned %d, want 2", code)
 	}
 }
